@@ -1,0 +1,119 @@
+---
+title: "Sampling Distributions"
+output: 
+  flexdashboard::flex_dashboard:
+    orientation: columns
+    vertical_layout: scroll
+runtime: shiny
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(shiny)
+```
+
+```{r global, include=FALSE}
+library(tidyverse)
+library(stringr)
+# load data in 'global' chunk so it can be shared by all users of the dashboard
+data_path <- "~/Dropbox (Brown)/Stats-Spring2018/7-Class activities/histograms"
+cols <- c("DOB", "Fave_Color", "Initials", "Section", "Age", "Height", 
+           "Weight", "Sleep", "Grade", "Good_Math", "Nervous_Stats")
+dat <- read.csv(sprintf("%s/demo_survey.csv", data_path), stringsAsFactors = F) %>%
+  tbl_df() %>%
+  filter(!(row_number() %in% c(1,2))) %>%
+  select(Q67:Q86) %>%
+  setNames(cols) 
+
+
+dat <- dat %>%
+  mutate(Height = str_replace_all(Height, "’", "'"),
+         Height = str_replace_all(Height, "”", ""),
+         Height = str_replace_all(Height, " ", ""),
+         Height = str_replace_all(Height, '"', ''),
+         Height = str_replace_all(Height, "''", ""),
+         Height = str_replace_all(Height, "'$", ""),
+         Height = str_replace_all(Height, "-", "'")) %>%
+  separate(Height, c("Height_ft", "Height_in"), sep = "'") %>%
+  mutate_at(vars(Section:Nervous_Stats), funs(as.numeric)) %>%
+  mutate(Height_in = ifelse(Height_ft > 12, Height_ft, Height_in),
+         Height_ft = ifelse(Height_ft > 12, 0, Height_ft),
+         Height = Height_ft*12 + Height_in)
+  
+```
+
+Column {.sidebar}
+-----------------------------------------------------------------------
+
+Waiting time between eruptions and the duration of the eruption for the
+Old Faithful geyser in Yellowstone National Park, Wyoming, USA.
+
+```{r}
+# number of observations in a sample
+sliderInput("sample_size", label = "Number of people:",
+            min = 1, max = 50, value = 10, step = 1)
+
+sliderInput("sample_num", label = "Number of samples:",
+            min = 1, max = 200, value = 1, step = 1)
+```
+
+Column
+-----------------------------------------------------------------------
+
+### Sample Distributions
+
+```{r}
+
+x <- reactive({
+      sample_fun <- function(x){
+          z <-  dat %>% filter(row_number() %in% sample(nrow(.), input$sample_size))
+          return(z)
+        }
+        x <- tibble(sample_n = 1:input$sample_num) %>%
+          mutate(sample = map(sample_n, sample_fun)) %>%
+          unnest(sample)
+})
+
+  
+renderPlot({  
+  min.x <- min(dat$Height, na.rm = T)
+  max.x <- max(dat$Height, na.rm = T)
+  
+  if(input$sample_num > 15){sample_plots <- sample(1:input$sample_num, 15)}
+  if(input$sample_num <= 15){sample_plots <- seq(1,input$sample_num, 1)}
+    
+  x() %>% 
+    filter(sample_n %in% sample_plots) %>% 
+    ggplot(aes(x = Height)) + 
+    geom_histogram(color = "black", fill = "gray", bins = 10) +
+    scale_x_continuous(limits = c(min.x, max.x), breaks = seq(min.x, max.x, 4)) +
+    labs(x = "Height (inches)", y = "Frequency", title = "Sample Distribution") +
+    facet_wrap(~sample_n) +
+    theme_classic() +
+    theme(plot.title = element_text(hjust = .5, face = "bold"),
+          axis.text = element_text(face = "bold", size = rel(1.2)),
+          axis.title = element_text(face = "bold", size = rel(1.2)))
+  
+  # gridExtra::grid.arrange(p1, p2)
+})
+```
+
+### Sampling Distribution
+```{r}
+renderPlot({
+  min.x <- min(dat$Height, na.rm = T)
+  max.x <- max(dat$Height, na.rm = T)
+  y <- x() %>%
+    group_by(sample_n) %>%
+    summarize(Mean = mean(Height, na.rm = T))
+  
+  y %>% ggplot(aes(x = Mean)) +
+    geom_histogram(color = "black", fill = "gray", bins = 10) +
+    scale_x_continuous(limits = c(min.x, max.x), breaks = seq(min.x, max.x, 4)) +
+    labs(x = "Height (inches)", y = "Frequency", title = "Sampling Distribution") +
+    theme_classic()  +
+    theme(plot.title = element_text(hjust = .5, face = "bold"),
+          axis.text = element_text(face = "bold", size = rel(1.2)),
+          axis.title = element_text(face = "bold", size = rel(1.2)))
+})
+```
